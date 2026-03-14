@@ -1,3 +1,15 @@
+
+
+import subprocess
+import sys
+def install(package):
+    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+try:
+    import catboost as cb
+except ImportError:
+    install("catboost==1.4.0")
+    import catboost as cb
+
 # 导入需要的库
 import streamlit as st
 import pandas as pd
@@ -6,6 +18,7 @@ import catboost as cb
 import pickle
 import shap
 import matplotlib.pyplot as plt
+
 
 # ========== 基础配置（解决中文显示问题） ==========
 plt.rcParams['font.sans-serif'] = ['SimHei']  # 显示中文
