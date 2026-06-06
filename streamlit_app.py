@@ -1,7 +1,7 @@
 """
-NEC 手术风险在线预测系统
-基于 CatBoost + SHAP 可解释性分析
-运行方式: streamlit run streamlit_app.py
+NEC Surgical Risk Prediction System
+CatBoost + SHAP interpretability analysis
+Usage: streamlit run streamlit_app.py
 """
 import os
 import pickle
@@ -12,28 +12,28 @@ import catboost as cb
 import shap
 import matplotlib.pyplot as plt
 
-# ==================== 页面配置 ====================
+# ==================== Page Config ====================
 st.set_page_config(
-    page_title="NEC 手术风险预测",
-    page_icon="🏥",
+    page_title="NEC Surgical Risk Prediction",
+    page_icon=":hospital:",
     layout="wide",
 )
 
-# ==================== 中文绘图支持 ====================
-plt.rcParams["font.sans-serif"] = ["SimHei", "Arial Unicode MS", "DejaVu Sans"]
+# ==================== Plotting Support ====================
+plt.rcParams["font.sans-serif"] = ["Arial", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
 
-# ==================== 文件路径（模型文件与此脚本同目录） ====================
+# ==================== File Paths ====================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "catboost_model.cbm")
 FEATURE_NAMES_PATH = os.path.join(BASE_DIR, "catboost_feature_names.pkl")
 SHAP_PATH = os.path.join(BASE_DIR, "catboost_shap_result.pkl")
 
 
-# ==================== 加载模型与数据（缓存） ====================
+# ==================== Load Model & Data (Cached) ====================
 @st.cache_resource
 def load_model_and_data():
-    """加载 CatBoost 模型、特征名和 SHAP 结果"""
+    """Load CatBoost model, feature names, and SHAP results."""
     try:
         model = cb.CatBoostClassifier()
         model.load_model(MODEL_PATH)
@@ -46,79 +46,124 @@ def load_model_and_data():
 
         return model, feature_names, shap_result
     except FileNotFoundError as e:
-        st.error(f"❌ 模型文件缺失：{e.filename}")
+        st.error(f"Model file missing: {e.filename}")
         return None, None, None
     except Exception as e:
-        st.error(f"❌ 模型加载失败：{e}")
+        st.error(f"Model loading failed: {e}")
         return None, None, None
 
 
 model, feature_names, shap_result = load_model_and_data()
 
-# ==================== 页面 UI ====================
-st.title("🏥 坏死性小肠结肠炎（NEC）手术风险预测模型")
-st.markdown("#### 基于 CatBoost 机器学习 + SHAP 可解释性分析")
+# ==================== UI ====================
+st.title("Necrotizing Enterocolitis (NEC) Surgical Risk Prediction Model")
+st.markdown("#### CatBoost Machine Learning + SHAP Interpretability")
 st.markdown("---")
 
-# ---------- 侧边栏：特征输入 ----------
+# ---------- Sidebar: Raw Value Inputs ----------
 with st.sidebar:
-    st.header("📝 输入患者特征")
+    st.header("Patient Characteristics")
 
-    # 特征中文名映射（可自行增改）
-    cn_labels = {
-        "CRP": "C 反应蛋白 CRP (mg/L)",
-        "RBC": "红细胞计数 RBC (×10¹²/L)",
-        "sbp": "收缩压 SBP (mmHg)",
-        "dbp": "舒张压 DBP (mmHg)",
-        "NLR": "中性粒/淋巴比值 NLR",
-        "Lymph_Count": "淋巴细胞计数 (×10⁹/L)",
-        "PLR": "血小板/淋巴比值 PLR",
-        "Preterm_baby": "是否早产儿",
-        "asphyxia": "是否窒息史",
-        "sepsis": "是否败血症",
+    raw_inputs = {}
+    raw_labels = {
+        "CRP": "C-Reactive Protein CRP (mg/L)",
+        "RBC": "Red Blood Cell Count RBC (x10^12/L)",
+        "sbp": "Systolic Blood Pressure SBP (mmHg)",
+        "dbp": "Diastolic Blood Pressure DBP (mmHg)",
+        "neutrophil": "Neutrophil Count (x10^9/L)",
+        "lymphocyte": "Lymphocyte Count Lymph_Count (x10^9/L)",
+        "platelet": "Platelet Count (x10^9/L)",
+        "Preterm_baby": "Preterm Infant",
+        "asphyxia": "History of Asphyxia",
+        "sepsis": "Sepsis",
     }
 
-    input_data = {}
-    for feat in feature_names:
-        label = cn_labels.get(feat, feat)
-        if feat in ("Preterm_baby", "asphyxia", "sepsis"):
-            input_data[feat] = st.selectbox(label, options=[0, 1], format_func=lambda x: "是" if x == 1 else "否")
-        else:
-            input_data[feat] = st.number_input(label, value=0.0, step=0.01, format="%.2f")
+    # Continuous variables
+    raw_inputs["CRP"] = st.number_input(raw_labels["CRP"], value=0.0, step=0.01, format="%.2f")
+    raw_inputs["RBC"] = st.number_input(raw_labels["RBC"], value=0.0, step=0.01, format="%.2f")
+    raw_inputs["sbp"] = st.number_input(raw_labels["sbp"], value=0.0, step=1.0, format="%.0f")
+    raw_inputs["dbp"] = st.number_input(raw_labels["dbp"], value=0.0, step=1.0, format="%.0f")
+    raw_inputs["neutrophil"] = st.number_input(raw_labels["neutrophil"], value=0.0, step=0.01, format="%.2f")
+    raw_inputs["lymphocyte"] = st.number_input(raw_labels["lymphocyte"], value=0.0, step=0.01, format="%.2f")
+    raw_inputs["platelet"] = st.number_input(raw_labels["platelet"], value=0.0, step=1.0, format="%.0f")
+
+    # Binary variables
+    for feat in ("Preterm_baby", "asphyxia", "sepsis"):
+        raw_inputs[feat] = st.selectbox(
+            raw_labels[feat],
+            options=[0, 1],
+            format_func=lambda x: "Yes" if x == 1 else "No",
+            key=feat,
+        )
 
     st.markdown("---")
-    predict_btn = st.button("🚀 开始预测", type="primary", use_container_width=True)
+    predict_btn = st.button("Predict Risk", type="primary", use_container_width=True)
 
-# ---------- 构造输入 DataFrame ----------
-input_df = pd.DataFrame([input_data])
+# ==================== Compute Derived Ratios ====================
+lymph = raw_inputs["lymphocyte"]
+neutrophil = raw_inputs["neutrophil"]
+platelet = raw_inputs["platelet"]
 
-# ==================== 预测逻辑 ====================
+nlr = neutrophil / lymph if lymph != 0 else 0.0
+plr = platelet / lymph if lymph != 0 else 0.0
+
+# Build the final model input DataFrame
+model_input = {
+    "CRP": raw_inputs["CRP"],
+    "RBC": raw_inputs["RBC"],
+    "sbp": raw_inputs["sbp"],
+    "dbp": raw_inputs["dbp"],
+    "NLR": nlr,
+    "Lymph_Count": lymph,
+    "PLR": plr,
+    "Preterm_baby": raw_inputs["Preterm_baby"],
+    "asphyxia": raw_inputs["asphyxia"],
+    "sepsis": raw_inputs["sepsis"],
+}
+input_df = pd.DataFrame([model_input])
+
+# ==================== Prediction Logic ====================
 if predict_btn and model is not None:
-    # 1. 模型预测
-    pred_prob = model.predict_proba(input_df)[0]   # [P(0类), P(1类)]
-    pred_label = model.predict(input_df)[0]         # 0 或 1
+    pred_prob = model.predict_proba(input_df)[0]
+    pred_label = model.predict(input_df)[0]
 
-    st.subheader("🔍 预测结果")
+    st.subheader("Prediction Result")
     col1, col2 = st.columns(2)
     with col1:
-        risk_text = "⚠️ 高风险（建议手术）" if pred_label == 1 else "✅ 低风险（保守治疗）"
-        st.metric("预测类别", risk_text)
+        risk_text = "High Risk" if pred_label == 1 else "Low Risk"
+        st.metric("Risk Level", risk_text)
     with col2:
-        st.metric("手术风险概率", f"{pred_prob[1]:.2%}")
+        st.metric("Surgical Risk Probability", f"{pred_prob[1]:.2%}")
 
-    # 2. 风险进度条
-    st.progress(float(pred_prob[1]), text=f"风险评分：{pred_prob[1]:.1%}")
+    st.progress(float(pred_prob[1]), text=f"Risk Score: {pred_prob[1]:.1%}")
+
+    # ---- Derived Ratios Display ----
+    st.markdown("---")
+    st.subheader("Derived Ratios (Computed from Raw Inputs)")
+    ratio_df = pd.DataFrame({
+        "Ratio": ["NLR", "PLR"],
+        "Formula": [
+            "Neutrophil Count / Lymphocyte Count",
+            "Platelet Count / Lymphocyte Count",
+        ],
+        "Raw Values": [
+            f"{neutrophil:.2f} / {lymph:.2f}",
+            f"{platelet:.0f} / {lymph:.2f}",
+        ],
+        "Calculated Value": [f"{nlr:.2f}", f"{plr:.2f}"],
+    })
+    st.table(ratio_df)
 
     st.markdown("---")
 
-    # ==================== SHAP 可解释性 ====================
-    st.subheader("📈 SHAP 特征贡献分析")
+    # ==================== SHAP Interpretability ====================
+    st.subheader("SHAP Feature Contribution Analysis")
 
     explainer = shap.TreeExplainer(model)
     shap_values_single = explainer.shap_values(input_df)
 
-    # -- 单样本瀑布图 (更直观) --
-    st.markdown("#### 🔬 该患者的特征贡献（瀑布图）")
+    # Waterfall plot for this patient
+    st.markdown("#### Patient-Specific Feature Contributions (Waterfall)")
     fig_wf, ax_wf = plt.subplots(figsize=(10, 4))
     shap.plots.waterfall(
         shap.Explanation(
@@ -131,22 +176,9 @@ if predict_btn and model is not None:
     )
     st.pyplot(fig_wf)
 
-    # -- 单样本力图 --
-    st.markdown("#### 📊 该患者的 SHAP 力图")
-    fig_force, ax_force = plt.subplots(figsize=(14, 3))
-    shap.plots.force(
-        base_value=explainer.expected_value,
-        shap_values=shap_values_single,
-        features=input_df.iloc[0],
-        feature_names=feature_names,
-        matplotlib=True,
-        show=False,
-    )
-    st.pyplot(fig_force)
-
-    # -- 全局特征重要性 --
+    # Global feature importance bar
     st.markdown("---")
-    st.markdown("#### 🌐 全局特征重要性（基于全体样本 SHAP 均值）")
+    st.markdown("#### Global Feature Importance (SHAP Mean |Value|)")
 
     fig_bar, ax_bar = plt.subplots(figsize=(8, 5))
     shap.summary_plot(
@@ -157,8 +189,8 @@ if predict_btn and model is not None:
     )
     st.pyplot(fig_bar)
 
-    # -- SHAP 摘要图 --
-    st.markdown("#### 📋 SHAP 摘要图（全体样本）")
+    # SHAP summary beeswarm
+    st.markdown("#### SHAP Summary Plot (All Samples)")
     fig_summary, ax_summary = plt.subplots(figsize=(8, 5))
     shap.summary_plot(
         shap_result["shap_values"],
@@ -167,28 +199,12 @@ if predict_btn and model is not None:
     )
     st.pyplot(fig_summary)
 
-    # -- 单特征依赖图 --
-    st.markdown("---")
-    st.markdown("#### 🔎 单特征依赖图（可选）")
-    selected_feat = st.selectbox("选择要查看的特征", feature_names, key="dep_feat")
-    fig_dep, ax_dep = plt.subplots(figsize=(7, 4))
-    shap.dependence_plot(
-        selected_feat,
-        shap_result["shap_values"],
-        pd.DataFrame(
-            shap_result["shap_values"],
-            columns=feature_names,
-        ),
-        feature_names=feature_names,
-        show=False,
-    )
-    st.pyplot(fig_dep)
-
 elif predict_btn and model is None:
-    st.error("模型未成功加载，无法预测。请检查模型文件是否完整。")
+    st.error("Model not loaded. Prediction unavailable. Please check model files.")
 
-# ==================== 页脚 ====================
+# ==================== Footer ====================
 st.markdown("---")
 st.markdown(
-    "💡 **免责声明**：本模型仅供临床辅助参考，最终诊疗决策请结合医生专业判断。"
+    "**Disclaimer**: This model is for clinical decision support only. "
+    "Final clinical decisions should be made by qualified healthcare professionals."
 )
